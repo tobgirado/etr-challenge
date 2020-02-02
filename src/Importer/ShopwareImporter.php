@@ -3,9 +3,11 @@
 namespace Importer;
 
 use GuzzleHttp\Client;
+use Logger\Logger;
 
 class ShopwareImporter
 {
+    private $logger;
     private $config;
     private $values = [];
     private $success = [];
@@ -13,8 +15,9 @@ class ShopwareImporter
 
     static $required_fields = ["SHOPWARE_URL","SHOPWARE_CLIENT_ID","SHOPWARE_CLIENT_SECRET"];
 
-    public function __construct($configParams)
+    public function __construct($logger, $configParams)
     {
+        $this->logger = $logger;
         foreach(self::$required_fields as $required_field) {
             if(empty($configParams[$required_field])) 
                 throw new \Exception(sprintf("Required configuration value '%s' is missing from the configuration file", $required_field));             
@@ -53,6 +56,8 @@ class ShopwareImporter
             $b =  json_decode($post->getBody()->getContents());
             $category["id"] = $b->data->id;
 
+            $this->logger->log(sprintf("Category '%s' was imported. New ID is: %s", $category["name"], $category["id"]), Logger::VERBOSITY_3);
+
             foreach($category["products"] as $product) {
                 try {
                     $post = $client->request('POST', $this->config["SHOPWARE_URL"] . 'articles', [
@@ -74,11 +79,15 @@ class ShopwareImporter
                                 ]
                             ]);
 
-                    $b =  json_decode($post->getBody()->getContents());
-                    if($b->success == true)
+                    $b =  json_decode($post->getBody(   )->getContents());
+                    if($b->success == true) {
                         $this->success[] = $product;
-                    if($b->success == false)
-                        throw new \Exception("Product was not added");
+                        $this->logger->log(sprintf("Product '%s' was imported", $product["title"]), Logger::VERBOSITY_3);
+                    }
+                    if($b->success == false) {
+                        throw new \Exception(sprintf("Product '%s' was not added", $product["title"]));
+                    }
+                    
                 }
                 catch(\Exception $e) {
                     $this->failed[] = [
@@ -105,9 +114,9 @@ class ShopwareImporter
                 ];
             }
 
-            $tree[$value['product_line_area']]["products"][] = $value;
+            $tree[$value['product_line_area']]["products"][] = $value;            
         }
-
+        print_r($tree);
         return array_values($tree);
     }
 
@@ -124,5 +133,10 @@ class ShopwareImporter
     public function getFailedCount()
     {
         return count($this->failed);
+    }
+
+    public function getFailed()
+    {
+        return $this->failed;
     }
 }

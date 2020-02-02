@@ -8,11 +8,17 @@ use Processor\ConfigProcessor;
 use Processor\DataProcessor;
 use GuzzleHttp\Client;
 use Importer\ShopwareImporter;
+use Logger\Logger;
 
 class ShopwareImportCommand
 {
+  private $logger = null;
   private $config = [];
   private $configParams = [];
+
+  public function __construct($logger) {
+    $this->logger = $logger;
+  }
 
   public function configure($params)
   {
@@ -37,6 +43,8 @@ class ShopwareImportCommand
 
   public function execute()
   {
+    $this->logger->setVerbosity($this->config["verbosity"]);
+
     $json = null;
 
     if (!empty($this->config["file"])) {
@@ -55,8 +63,14 @@ class ShopwareImportCommand
     $values = $p->validate()
       ->getValues();
 
-    $s = new ShopwareImporter($this->configParams);
+    $s = new ShopwareImporter($this->logger, $this->configParams);
     $s->setValues($values)->doImport();
-    echo sprintf("The import ran successfully. %s entries were processed, %s were imported, %s failed", $s->getTotalCount(), $s->getSuccessCount(), $s->getFailedCount());
+    $this->logger->log(sprintf("The import ran successfully. %s entries were processed, %s were imported, %s failed", $s->getTotalCount(), $s->getSuccessCount(), $s->getFailedCount()));
+    if($s->getFailedCount() > 0) {
+        $this->logger->log("The following products were not imported:");
+        foreach($s->getFailed() as $fail) {
+            $this->logger->log(json_encode($fail), Logger::VERBOSITY_3);
+        }
+    }
   }
 }

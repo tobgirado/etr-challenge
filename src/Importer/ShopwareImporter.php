@@ -6,9 +6,22 @@ use GuzzleHttp\Client;
 
 class ShopwareImporter
 {
+    private $config;
     private $values = [];
     private $success = [];
     private $failed = [];
+
+    static $required_fields = ["SHOPWARE_URL","SHOPWARE_CLIENT_ID","SHOPWARE_CLIENT_SECRET"];
+
+    public function __construct($configParams)
+    {
+        foreach(self::$required_fields as $required_field) {
+            if(empty($configParams[$required_field])) 
+                throw new \Exception(sprintf("Required configuration value '%s' is missing from the configuration file", $required_field));             
+        }
+        $this->config = $configParams;       
+        
+    }
 
     public function setValues($values)
     {
@@ -17,78 +30,85 @@ class ShopwareImporter
         return $this;
     }
 
-
-    private function nameExists($value, $array)
-    {
-        foreach ($array as $key => $val) {
-            if ($val['name'] === $value) {
-                return true;
-            }
-        }
-        return false;
-    }
-    private function getIdFromArray($name, $array)
-    {
-        foreach ($array as $key => $val) {
-            if ($val['name'] === $name) {
-                return $val["id"];
-            }
-        }
-        return null;
-    }
     public function doImport()
     {
         $defaultTax = 7;
-        $user = "demo";
-        $secret = "F8pkhFxaRDAheFsQvRHrkQ9Q0l06E5Mi8zT0XsZ0";
-
-        $auth = [$user, $secret];
+     
+        $auth = [$this->config["SHOPWARE_CLIENT_ID"],$this->config["SHOPWARE_CLIENT_SECRET"]];
 
         $client = new Client();
 
-        $cat = array();
-        $prod = array();
-        foreach ($this->values as $i => $values) {
-            if (!self::nameExists($values["product_line_area"], $cat))
-                array_push($cat, ["id" => null, "name" => $values["product_line_area"], "parentId" => 1]);
-        };
+        $categories = $this->getAsTree();
 
-        foreach ($cat as  $i => $category) {
-            $post = $client->request('POST', 'http://localhost:8012/api/categories', ['auth' => $auth, 'json' => $category]);
+        foreach($categories as $category) {
+            $post = $client->request('POST', $this->config["SHOPWARE_URL"] . 'categories', [
+                        'auth' => $auth, 
+                        'json' => [
+                            "id" => null,
+                            "name" => $category["name"],
+                            "parentId" => 1
+                        ]
+                    ]);
+
             $b =  json_decode($post->getBody()->getContents());
-            $cat[$i]["id"] = $b->data->id;
-        };
+            $category["id"] = $b->data->id;
 
-        foreach ($this->values as $values) {
-            array_push($prod, [
-                "id" => null,
-                "name" => $values["title"],
-                "active" => true,
-                "description" => $values["lang"],
-                "mainDetail" => [
-                    "number" => rand(),
-                ],
-                "categories" => [[
-                    "id" => self::getIdFromArray($values["product_line_area"], $cat)
-                ]],
-                "tax" => [
-                    "tax" => 7
-                ]
-            ]);
-        };
+            foreach($category["products"] as $product) {
+                try {
+                    $post = $client->request('POST', $this->config["SHOPWARE_URL"] . 'articles', [
+                                'auth' => $auth, 
+                                'json' => [
+                                    "id" => null,
+                                    "name" => $product["title"],
+                                    "active" => true,
+                                    "description" => $product["lang"],
+                                    "mainDetail" => [
+                                        "number" => rand(),
+                                    ],
+                                    "categories" => [[
+                                        "id" => $category["id"]
+                                    ]],
+                                    "tax" => [
+                                        "tax" => 7
+                                    ]
+                                ]
+                            ]);
 
-        foreach ($prod as  $i => $product) {
-            $post = $client->request('POST', 'http://localhost:8012/api/articles', ['auth' => $auth, 'json' => $product]);
-            $b =  json_decode($post->getBody()->getContents());
-            if($b->success == true)
-                array_push($this->success,$product);
-            if($b->success == false)    
-                array_push($this->failed,$product);
+                    $b =  json_decode($post->getBody()->getContents());
+                    if($b->success == true)
+                        $this->success[] = $product;
+                    if($b->success == false)
+                        throw new \Exception("Product was not added");
+                }
+                catch(\Exception $e) {
+                    $this->failed[] = [
+                        "product" => $product,
+                        "error" => $e->getMessage()
+                    ];
+                }
+            }
 
-            $prod[$i]["id"] = $b->data->id;
-        };
+        }
 
         return $this;
+    }
+
+    private function getAsTree(){
+        $tree = [];
+
+        foreach($this->values as $value) {
+            if(!array_key_exists($value['product_line_area'], $tree)) {
+                $tree[$value['product_line_area']] = [
+                    "name" => $value['product_line_area'],
+                    "id" => null,
+                    "products" => []
+                ];
+            }
+
+            $tree[$value['product_line_area']]["products"][] = $value;
+        }
+
+        return array_values($tree);
     }
 
     public function getTotalCount()

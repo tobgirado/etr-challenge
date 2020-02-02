@@ -7,4 +7,6 @@
     2. ```"SHOPWARE_CLIENT_ID"```: shopware user.
     3. ```"SHOPWARE_CLIENT_SECRET"```: shopware user's API Key.
 
-2. The sour   
+2. The source of the file to import can be a file or an URL. To specify it, you should run
+    ```php shopware-import.php``` and add ```--file=path\filename.json``` or ```--url="http:\\url.here.com"```. **The only supported format is json.**
+    3. Logging: Verbosity level vary from ```-v``` to ```-vvvv```, example: ```php shopware-import.php --file=path\filename.json -vvvv```

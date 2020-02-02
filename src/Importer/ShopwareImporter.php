@@ -116,7 +116,7 @@ class ShopwareImporter
 
             $tree[$value['product_line_area']]["products"][] = $value;            
         }
-        print_r($tree);
+
         return array_values($tree);
     }
 
